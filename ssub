@@ -1,0 +1,147 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+----------------------------------------------------------
+  A simple script for submitting jobs on taiyi or qiming
+
+  Author  :  Xiaofei Zeng
+  Email   :  xiaofei_zeng@whu.edu.cn
+             zengxf@sustech.edu.cn
+  GitHub  :  https://github.com/zengxiaofei/
+  Version :  0.9
+----------------------------------------------------------
+"""
+
+import argparse
+import os
+
+
+def parse_shell(shell_script, nlines, convert):
+    """A generator yeild subscripts"""
+    with open(shell_script) as f:
+        n, tmp = 0, ''
+        for x, line in enumerate(f, 1):
+            lstrip = line.strip()
+            if not lstrip or lstrip.startswith('#'):
+                continue
+            n += 1
+            # convert relative paths (starting with ./ or ../) into absolute paths
+            if convert == 'yes':
+                lsplit = line.split()
+                for m, element in enumerate(lsplit):
+                    if element.startswith('./') or element.startswith('../'):
+                        if not os.path.exists(element):
+                            raise OSError('Line {0} in {1}: file / path "{2}" \
+                                    not exists!'.format(x, shell_script, element))
+                        lsplit[m] = os.path.abspath(element)
+                    else:
+                        lsplit[m] = element
+                tmp += ' '.join(lsplit) + '\n'
+            # the relative paths are treated relative to the actual rundirs
+            else:
+                tmp += line
+            if n % nlines == 0:
+                yield tmp
+                n, tmp = 0, ''
+        if tmp:
+            yield tmp
+
+
+def cluster_config(fp, cluster, threads, queue):
+    """add settings for different clusters"""
+    # taiyi / lsf
+    if cluster in {'taiyi', 'lsf'}:
+        fp.write('#BSUB -J {0}\n'.format(fp.name))
+        fp.write('#BSUB -L /bin/bash\n')
+        fp.write('#BSUB -q {0}\n'.format(queue))
+        fp.write('#BSUB -n {0}\n'.format(threads))
+        fp.write('#BSUB -R "span[ptile={0}]"\n'.format(threads))
+        fp.write('#BSUB -o stdout_%J.out\n')
+        fp.write('#BSUB -e stderr_%J.out\n')
+        fp.write('\n')
+    # qiming / pbs
+    elif cluster in {'qiming', 'pbs'}:
+        fp.write('#PBS -N {0}\n'.format(fp.name))
+        fp.write('#PBS -S /bin/bash\n')
+        fp.write('#PBS -q {0}\n'.format(queue))
+        fp.write('#BSUB -l nodes=1;ppn={0}\n'.format(threads))
+        fp.write('#BSUB -o stdout_%J.out\n')
+        fp.write('#BSUB -e stderr_%J.out\n')
+        fp.write('\n')
+
+
+def write_subscripts(shell_script, cmds_generator, cluster, threads, queue, stringency):
+    """make rundirs and write subscripts"""
+    rundir = 'batch_jobs'
+    os.mkdir(rundir)
+    subscripts_list = []
+    for n, subcmds in enumerate(cmds_generator, 1):
+        subscript = '{0}.{1}'.format(shell_script, n)
+        os.mkdir('{0}/{1}'.format(rundir, subscript))
+        with open('{0}/{1}/{1}'.format(rundir, subscript), 'w') as fp:
+            cluster_config(fp, cluster, threads, queue)
+            if stringency == 'high':
+                fp.write('set -e\n\n')
+            fp.write('echo "[log] Job starts at `date`" 1>&2\n\n')
+            fp.write(subcmds)
+            fp.write('\necho "[log] Job ends at `date`" 1>&2\n')
+            fp.write('echo "[log] This-Job-is-Completed!" 1>&2\n')
+            subscripts_list.append(fp.name)
+    return subscripts_list
+
+
+def batch_submit(subscripts_list, cluster):
+    """submit subscripts according to different clusters"""
+    if cluster in {'taiyi', 'lsf'}:
+        sub_cmd = 'bsub <'
+    elif cluster in {'qiming', 'pbs'}:
+        sub_cmd = 'qsub'
+    for subscript_path in subscripts_list:
+        rundir, subscript = os.path.split(subscript_path)
+        os.system('cd {0} && {1} {2} && cd ../../'.format(rundir, sub_cmd, subscript))
+
+
+def parse_argument():
+    """parse argument using argparse"""
+    parser = argparse.ArgumentParser(
+            formatter_class = argparse.RawDescriptionHelpFormatter,
+            description = __doc__)
+    parser.add_argument('shell_script',
+            help='filename of input shell script, all paths in the script should be \
+                    either relative paths starting with "./, ../" or absolute paths')
+    parser.add_argument('--nlines', default=1, type=int,
+            help='number of lines in each subscript [default: %(default)i]')
+    parser.add_argument('--dryrun', default=False, action='store_true',
+            help='generate subscripts but do not submit them [default: %(default)s]')
+    parser.add_argument('--convert', default='yes', choices={'yes', 'no'},
+            help='convert relative paths to absolute paths [default: %(default)s]')
+    parser.add_argument('--stringency', default='high', choices={'high', 'low'},
+            help='add "set -e" in each subscript if high [default: %(default)s]')
+    parser.add_argument('--threads', default=40, type=int,
+            help='number of threads for each subscript [default: %(default)i]')
+    # not now 
+    # parser.add_argument('--mem', default=40, type=float,
+    #         help='memory (G) for each subscript [default: %(default)s]')
+    parser.add_argument('--queue', default='short',
+            help='queue name [default: %(default)s]')
+    parser.add_argument('--cluster', default='taiyi', 
+            choices={'taiyi', 'qiming', 'lsf', 'pbs'},
+            help='cluster name/type [default: %(default)s]')
+    return parser.parse_args()
+
+
+def main():
+    args = parse_argument()
+    cmds_generator = parse_shell(args.shell_script, args.nlines, args.convert)
+    subscripts_list = write_subscripts(
+            args.shell_script, cmds_generator, 
+            args.cluster, args.threads, 
+            args.queue, args.stringency
+            )
+    if not args.dryrun:
+        batch_submit(subscripts_list, args.cluster)
+
+
+if __name__ == '__main__':
+    main()
