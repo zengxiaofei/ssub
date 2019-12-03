@@ -1,9 +1,11 @@
 # ssub
-A simple script for submitting jobs on taiyi or qiming (SUSTECH clusters)
+A simple script for submitting jobs on taiyi or qiming (SUSTECH clusters).
 
-懒得用nextflow，重新造了个轮子
+The usage of this script is somewhat similar to qsub-sge.pl but without monitor functions.
 
-```Bash 
+(懒得用nextflow，重新造了个轮子)
+
+``` 
 
 $ ssub -h
 

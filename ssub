@@ -19,7 +19,7 @@ import sys
 
 
 def parse_shell(shell_script, nlines, convert):
-    """A generator yeild subscripts"""
+    """A generator for yielding subscripts"""
     with open(shell_script) as f:
         n, tmp = 0, ''
         for x, line in enumerate(f, 1):
