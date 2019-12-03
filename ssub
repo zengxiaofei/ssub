@@ -15,6 +15,7 @@
 
 import argparse
 import os
+import sys
 
 
 def parse_shell(shell_script, nlines, convert):
@@ -32,8 +33,10 @@ def parse_shell(shell_script, nlines, convert):
                 for m, element in enumerate(lsplit):
                     if element.startswith('./') or element.startswith('../'):
                         if not os.path.exists(element):
-                            raise OSError('Line {0} in {1}: file / path "{2}" \
-                                    not exists!'.format(x, shell_script, element))
+                            print('[Warnings] Line {0} in {1}: '
+                                  'file / path "{2}" not exist! '
+                                  'Ignore if an output file / path.'.format(
+                                      x, shell_script, element), file=sys.stderr)
                         lsplit[m] = os.path.abspath(element)
                     else:
                         lsplit[m] = element
